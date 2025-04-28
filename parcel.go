@@ -42,7 +42,7 @@ func (s ParcelStore) Get(number int) (Parcel, error) {
 	p := Parcel{}
 	err := row.Scan(&p.Number, &p.Client, &p.Address, &p.Status, &p.CreatedAt)
 	if err != nil {
-		return p, fmt.Errorf("error extracting parcel number: %v", err)
+		return Parcel{}, fmt.Errorf("error extracting parcel number: %v", err)
 	}
 	return p, nil
 }
@@ -92,26 +92,25 @@ func (s ParcelStore) SetStatus(number int, status string) error {
 func (s ParcelStore) SetAddress(number int, address string) error {
 	// реализуйте обновление адреса в таблице parcel
 	// менять адрес можно только если значение статуса registered
-	row := s.db.QueryRow("SELECT status FROM parcel WHERE number = :number", sql.Named("number", number))
-
-	var status string
-	err := row.Scan(&status)
-
+	res, err := s.db.Exec(`
+	UPDATE parcel
+	SET address = :address
+	WHERE number = :number AND status = :status`,
+	sql.Named("address", address), 
+	sql.Named("number", number), 
+	sql.Named("status", ParcelStatusRegistered),
+)
 	if err != nil {
-		return fmt.Errorf("error extracting parcel status: %v", err)
+		return fmt.Errorf("error updating parcel address: %w", err)
 	}
 
-	if status != ParcelStatusRegistered {
-		return fmt.Errorf("cannot change address: parcel is not registered")
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error checking update result: %w", err)
 	}
 
-	_, err = s.db.Exec("UPDATE parcel SET address = :address WHERE number = :number",
-		sql.Named("address", address),
-		sql.Named("number", number))
-
-	if err != nil {
-		fmt.Println(err)
-		return err
+	if rowsAffected == 0 {
+		return fmt.Errorf("cannot change address: parcel is not registered or not found")
 	}
 
 	return nil
@@ -120,22 +119,24 @@ func (s ParcelStore) SetAddress(number int, address string) error {
 func (s ParcelStore) Delete(number int) error {
 	// реализуйте удаление строки из таблицы parcel
 	// удалять строку можно только если значение статуса registered
-	row := s.db.QueryRow("SELECT status FROM parcel WHERE number = :number", sql.Named("number", number))
 
-	var status string
-	err := row.Scan(&status)
-
+	res, err := s.db.Exec(`
+	DELETE FROM parcel
+	WHERE number = :number AND status = :status`,
+	sql.Named("number", number), 
+	sql.Named("status", ParcelStatusRegistered),
+)
 	if err != nil {
-		return fmt.Errorf("error extracting parcel status: %v", err)
-	}
-	if status != ParcelStatusRegistered {
-		return fmt.Errorf("cannot delete parcel: status is not registered")
+		return fmt.Errorf("error deleting parcel: %w", err)
 	}
 
-	_, err = s.db.Exec("DELETE FROM parcel WHERE number = :number", sql.Named("number", number))
+	rowsAffected, err := res.RowsAffected()
 	if err != nil {
-		fmt.Println(err)
-		return err
+		return fmt.Errorf("error checking delete result: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("cannot delete parcel: status is not registered or parcel not found")
 	}
 	return nil
 }
